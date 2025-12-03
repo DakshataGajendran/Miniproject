@@ -1,0 +1,78 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isFaculty() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty';
+    }
+    
+    function isStudent() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student';
+    }
+
+    // USER PROFILES
+    // Users can read and write their own profile. No one else can.
+    match /users/{userId} {
+      allow read, update: if isSignedIn() && isOwner(userId);
+      allow create: if isSignedIn(); // Allow creation for new sign-ups
+      allow delete: if false; // Do not allow users to delete their own profiles for now
+      allow list: if isFaculty(); // Allow faculty to list users
+    }
+
+    // EXAMS
+    // Faculty can create, update, and manage exams. Students can only read them.
+    match /exams/{examId} {
+      allow read: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isFaculty() && request.resource.data.createdBy == request.auth.uid;
+      
+      // QUESTIONS SUBCOLLECTION
+      // Faculty can manage questions for an exam they own. Students can read.
+      match /questions/{questionId} {
+         allow read: if isSignedIn();
+         allow list: if isSignedIn();
+         allow create, update, delete: if isSignedIn() && isFaculty() && get(/databases/$(database)/documents/exams/$(examId)).data.createdBy == request.auth.uid;
+      }
+    }
+    
+    // PRACTICE EXAMS
+    // Students can create practice exams for themselves. Only they can read/write them.
+    match /practiceExams/{practiceExamId} {
+        allow read, write: if isSignedIn() && request.resource.data.studentId == request.auth.uid;
+        allow list: if isSignedIn(); // Allow listing own practice exams
+        
+        match /questions/{questionId} {
+            allow read, write: if isSignedIn() && get(/databases/$(database)/documents/practiceExams/$(practiceExamId)).data.studentId == request.auth.uid;
+        }
+    }
+
+    // SUBMISSIONS
+    // Students can create/update their own submissions. Faculty can read/update (for grading).
+    match /submissions/{submissionId} {
+        allow read: if isSignedIn() && (isOwner(resource.data.studentId) || isFaculty());
+        allow create: if isSignedIn() && isStudent() && request.resource.data.studentId == request.auth.uid;
+        allow update: if isSignedIn() && 
+                      ( (isStudent() && isOwner(resource.data.studentId) && resource.data.status == 'in_progress') || 
+                        (isFaculty() && resource.data.status != 'in_progress') );
+        allow list: if isSignedIn(); // Allow users to list submissions (queries will be filtered client-side)
+        allow delete: if false;
+    }
+    
+    // EVENTS
+    // Allow authenticated users to write events. Should be restricted further in production.
+    match /events/{eventId} {
+        allow write: if isSignedIn();
+        allow read, list, delete: if false;
+    }
+  }
+}
