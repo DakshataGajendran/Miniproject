@@ -178,7 +178,7 @@ Contact the author for commercial usage permissions.
 ---
 
 ## 👩‍💻 Author
-**Keerthana Saravanan**  
+**DAKSHATA G**  
 
 
 Just tell me!
